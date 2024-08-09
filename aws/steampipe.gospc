@@ -1,6 +1,6 @@
 ### {{$.Marker}}_START ###
 
-connection "aws_all" {
+connection "aws" {
   plugin      = "aws"
   type        = "aggregator"
   connections = [{{.AllAccountsString}}]
