@@ -53,6 +53,9 @@ func AddCommand(p *flags.Parser, provider GlobalOptionsProvider) {
 
 // Validate checks that the options are valid
 func (o *Options) Execute(args []string) error {
+	// Default to Kion
+	o.FromKion = !o.FromSSO
+
 	// Ensure exactly one account source is selected
 	if o.FromKion == o.FromSSO {
 		return errors.New("you must specify exactly one account source: either --from-kion or --from-sso")
