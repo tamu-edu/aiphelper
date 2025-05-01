@@ -2,7 +2,7 @@
 
 
 {{range .RoleList}}
-connection "aws_all_{{.RoleName}}" {
+connection "aws_role_{{.RoleName}}" {
   plugin      = "aws"
   type        = "aggregator"
   connections = [{{.RoleProfileListString}}]
