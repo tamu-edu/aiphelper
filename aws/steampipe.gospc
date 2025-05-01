@@ -1,11 +1,21 @@
 ### {{$.Marker}}_START ###
 
-
+{{if .RoleList}}
 {{range .RoleList}}
 connection "aws_role_{{.RoleName}}" {
   plugin      = "aws"
   type        = "aggregator"
   connections = [{{.RoleProfileListString}}]
+  {{- if ne $.RegionsString "" }}
+  regions   = ["{{$.RegionsString}}"]
+  {{- end }}
+}
+{{end}}
+{{else}}
+connection "aws" {
+  plugin      = "aws"
+  type        = "aggregator"
+  connections = [{{$.AllAccountsString}}]
   {{- if ne $.RegionsString "" }}
   regions   = ["{{$.RegionsString}}"]
   {{- end }}
