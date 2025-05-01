@@ -1,15 +1,18 @@
-# AIP SSO Helper
+# AIP Profile Helper
 
-This utility helps set up various CLI tools with access to multiple cloud accounts. For AWS it uses AWS SSO to sign you in and gather information about the accounts you have access to.
+This utility helps set up various CLI tools with access to all your cloud accounts. For AWS, it will create AWS CLI (profiles)[https://docs.aws.amazon.com/cli/v1/userguide/cli-configure-files.html#cli-configure-files-format] for each account and role you have access to. It also creates Steampipe connectors for each profile, and an aggregate connector for each unique role.
 
 ## Usage
 
 ```
 Usage:
-  main [OPTIONS] <aws | azure>
+  aiphelper [OPTIONS] <aws | azure>
 
 Application Options:
-  -V, --version  aiphelper Version
+  -V, --version       aiphelper Version
+  -d, --debug         Enable debug logging
+      --kion-url=     Kion URL to use for profile generation (env: KION_URL)
+      --kion-apikey=  Kion API token for authentication (env: KION_APIKEY)
 
 Help Options:
   -h, --help  Show this help message
@@ -19,6 +22,10 @@ Available commands:
   azure  Initialize Azure
 
 [aws command options]
+      Account Source Options (exactly one required):
+          --from-sso     Use AWS Identity Center to get account list
+          --from-kion    Use Kion API to get account list
+
           --sso-start-url=  AWS SSO Start URL (default: https://aggie-innovation-platform.awsapps.com/start)
           --sso-region=     AWS SSO Region (default: us-east-2)
           --sso-role-name=  SSO Role To Assume (must be the same across all accounts) (default: AdministratorAccess)
@@ -37,22 +44,51 @@ Available commands:
 Example usage:
 
 ```
-aiphelper aws # Default regions
-aiphelper aws --regions us-east-1,us-west-1 
+# Default regions
+aiphelper aws
+
+# Specific regions
+aiphelper aws --regions us-east-1,us-east-2
+
+# AWS CLI use
+aws ec2 describe-instances --profile div_dept_my_account_001_readonlyaccess --filters "Name=tag:Environment,Values=test"
+
+# Steampipe use
+steampipe query 'select * from aws_div_dept_my_account_001_readonlyaccess.ec2_instance where tags["Environment"] = "test"'
+
+# Steampipe with aggregate connector
+steampipe query 'select * from aws_all_readonlyaccess.ec2_instance where tags["Environment"] = "test"'
 
 ```
 
 ## AWS
 
-`aiphelper` will create an aws profile for each account you have access to based on the account's display name. To use a profile, pass the profile name to the aws cli:
+`aiphelper` will create an aws profile for each account and role you have access to based on the account's display name and the role name. The profile name will be in the format `<account_name>_<role_name>` where both account and role names are normalized to be lowercase with underscores, and truncated to 63 characters.
 
-```
-aws ec2 describe-instances --profile=div_dept_my_account_002
-```
+For example, if you have access to the account `Div Dept My Account 002` with two roles, `AdministratorAccess` and `ReadOnlyAccess`, two profiles will be created: `div_dept_my_account_002_administratoraccess` and `div_dept_my_account_002_readonlyaccess`.
 
-Either a normalized account name (all lowercase and underscores) or the account ID can be used as the profile name.
+The profiles will be created in the AWS CLI config file, which is typically located at `~/.aws/config`. If you have custom profiles, they will be preserved. `aiphelper` will only manage the file contents between its file markers, `### AIPHELPER_MARKER_[START|END] ###`
 
-If you already have an AWS CLI SSO token that matches the SSO URL and region, it will be used. Otherwise, a bew device flow authentication will be started using the SSO parameters, and the token will be cached to disk for further AWS CLI operations.
+
+### Kion Integration
+
+`aiphelper` can be used to generate AWS profiles from Kion that use the `kion-cli` to generate short-term credentials transparently. This is useful for directly using the AWS CLI with Kion-managed accounts, as well as with tools that use the AWS CLI config file, such as Steampipe. Kion is the default account source, but you can explicitly specify it with the `--from-kion` option.
+
+To use this feature, you must have the `kion-cli` tool installed and configured. See the [Kion CLI documentation](https://github.com/kionsoftware/kion-cli) for more information.
+
+The Kion URL and API key can be set using the `--kion-url` and `--kion-apikey` options or the environment variables `KION_URL` and `KION_APIKEY`. `aiphelper` does not yet support sharing Kion API credentials with `kion-cli`, but this feature is planned for a future release.
+
+### AWS Identity Center (SSO)
+
+`aiphelper` can be used to generate AWS profiles from AWS Identity Center. AWS Identity Center is not used for AIP customer access, but is still used for some internal and staff accounts. Please use the Kion integration if you are an AIP customer.
+
+To use Identity Center as the account source, use the `--from-sso` option. This will use the AWS CLI SSO configuration to generate profiles for each account and role you have access to.
+
+However, unlike with the Kion integration, the SSO integration only creates supports a single role per account, specified by the `--sso-role-name` option. Two profiles will be created per account in the formats `aws_<account_name>` and `aws_<account_number>`. 
+
+For steampipe, A single aggregate connector `aws_all` will be created with one of each AWS account, using the `aws_<accountnumber>` connectors.
+
+If you already have an AWS CLI SSO token that matches the SSO URL and region, it will be used. Otherwise, a new device flow authentication will be started using the SSO parameters, and the token will be cached to disk for further AWS CLI operations.
 
 ## Azure
 
@@ -66,7 +102,15 @@ If you need to specify an authentication method, such as to use CLI or ENV crede
 
 ### AWS
 
-`aiphelper` will create a steampipe connector for each AWS profile and for each region specified (defaults to the AWS CLI default values). This will result in two connectors for each AWS account: `aws_<normalizedname>` and `aws_<accountnumber>`. It will also create an aggregate connector `aws_all` with one of each AWS account, using the `aws_<accountnumber>` connector. 
+`aiphelper` will create one Steampipe connector for each AWS profile for each region specified, defaulting to the AWS CLI default region search order. The connector names will be in the format `aws_<account_name>_<role_name>` where both account and role names are normalized to be lowercase with underscores, and truncated to 63 characters.
+
+When using Kion as an account source, aggregate connectors will be created for each unique role. The connector names will be in the format `aws_all_<role_name>` where the role name is normalized to be lowercase with underscores, and truncated to 63 characters. The aggregate connectors will allow you to query multiple accounts at once, limited to the accounts that role has access to.
+
+For example, if you have access to the accounts `Div Dept My Account 001` and `Div Dept My Account 002` with a `ReadOnlyAccess` role, an aggregate connector will be created as `aws_all_readonlyaccess` which will use both the `aws_div_dept_my_account_001_readonlyaccess` and `aws_div_dept_my_account_002_readonlyaccess` connectors.
+
+If you are using AWS Identity Center as the account source, only one aggregate connector will be created, `aws_all`, which will use all the AWS accounts you have access to. 
+
+The Steampipe configuration file will be created in the Steampipe config directory, which is typically located at `~/.steampipe/config/aws.spc`. If you have custom connectors or settings, they will be preserved. `aiphelper` will only manage the file contents between its file markers, `### AIPHELPER_MARKER_[START|END] ###`
 
 ### Azure
 
