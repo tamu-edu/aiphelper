@@ -7,6 +7,7 @@ import (
 	"github.com/jessevdk/go-flags"
 	"github.com/tamu-edu/aiphelper/aws"
 	"github.com/tamu-edu/aiphelper/azure"
+	"github.com/tamu-edu/aiphelper/utils"
 )
 
 // https://lightstep.com/blog/getting-real-with-command-line-arguments-and-goflags/
@@ -18,6 +19,7 @@ var Version = "development"
 
 var opts struct {
 	Version bool `long:"version" short:"V" description:"aiphelper Version"`
+	Debug      bool   `long:"debug" short:"d" description:"Enable debug logging"`
 }
 
 func main() {
@@ -30,6 +32,8 @@ func main() {
 	_, err := p.Parse()
 
 	if opts.Version == true {
+	// Set the debug flag in the utils package
+	utils.DebugEnabled = opts.Debug
 		fmt.Printf("Version: %s\n", Version)
 		os.Exit(0)
 	}
