@@ -96,8 +96,8 @@ func Init() {
 		awsTemplate = awsKionTemplate
 
 		// Get Kion URL and API key from global options
-		kionURL := utils.GetGlobalOption("kion-url")
-		kionApikey := utils.GetGlobalOption("kion-apikey")
+		kionURL := globalOpts.GetKionURL()
+		kionApikey := globalOpts.GetKionApikey()
 
 		// Get accounts from Kion
 		fmt.Println("Using Kion as the account source...")

@@ -9,6 +9,12 @@ import (
 	"github.com/tamu-edu/aiphelper/utils"
 )
 
+// GlobalOptionsProvider is an interface that defines what we need from the main package's GlobalOptions
+type GlobalOptionsProvider interface {
+	GetKionURL() string
+	GetKionApikey() string
+}
+
 type Regions struct {
 	All []string
 }
@@ -18,7 +24,8 @@ type Accounts struct {
 }
 
 var (
-	options *Options
+	options    *Options
+	globalOpts GlobalOptionsProvider
 )
 
 type Options struct {
@@ -33,9 +40,10 @@ type Options struct {
 	FromSSO       bool      `long:"from-sso" description:"Use AWS Identity Center to get account list" group:"account-source"`
 }
 
-func AddCommand(p *flags.Parser) {
+func AddCommand(p *flags.Parser, provider GlobalOptionsProvider) {
 	options = &Options{}
-	options.FromKion = true // Default to Kion
+
+	globalOpts = provider // Store reference to global options provider
 
 	_, err := p.AddCommand("aws", "Initialize AWS", "Initialize AWS config and Steampipe connections", options)
 	if err != nil {
@@ -54,8 +62,8 @@ func (o *Options) Execute(args []string) error {
 
 	if o.FromKion {
 		// Get Kion URL and API key from global options
-		kionURL := utils.GetGlobalOption("kion-url")
-		kionApikey := utils.GetGlobalOption("kion-apikey")
+		kionURL := globalOpts.GetKionURL()
+		kionApikey := globalOpts.GetKionApikey()
 
 		if kionURL == "" {
 			return errors.New("--kion-url is required when using --from-kion")

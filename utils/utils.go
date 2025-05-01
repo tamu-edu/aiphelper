@@ -8,15 +8,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
 )
 
 const Marker = "AIPHELPER_MARKER"
-
-var (
-	globalOptions      = make(map[string]string)
-	globalOptionsMutex sync.RWMutex
-)
 
 func SnakeCase(str string) string {
 	str = strings.ToLower(str)
@@ -113,23 +107,4 @@ func CreateOrReplaceInFile(path string, replaceWith string) error {
 func SplitArgumentParser(value string) []string {
 	var delimiter = regexp.MustCompile("[, ] *")
 	return delimiter.Split(value, -1)
-}
-
-// SetGlobalOption sets a global option value
-func SetGlobalOption(name, value string) {
-	globalOptionsMutex.Lock()
-	defer globalOptionsMutex.Unlock()
-	globalOptions[name] = value
-}
-
-// GetGlobalOption retrieves a global option value
-func GetGlobalOption(name string) string {
-	globalOptionsMutex.RLock()
-	value, exists := globalOptions[name]
-	globalOptionsMutex.RUnlock()
-
-	if exists {
-		return value
-	}
-	return ""
 }
