@@ -57,7 +57,7 @@ aws ec2 describe-instances --profile div_dept_my_account_001_readonlyaccess --fi
 steampipe query 'select * from aws_div_dept_my_account_001_readonlyaccess.ec2_instance where tags["Environment"] = "test"'
 
 # Steampipe with aggregate connector
-steampipe query 'select * from aws_all_readonlyaccess.ec2_instance where tags["Environment"] = "test"'
+steampipe query 'select * from aws_role_readonlyaccess.ec2_instance where tags["Environment"] = "test"'
 
 ```
 
@@ -86,7 +86,7 @@ To use Identity Center as the account source, use the `--from-sso` option. This 
 
 However, unlike with the Kion integration, the SSO integration only creates supports a single role per account, specified by the `--sso-role-name` option. Two profiles will be created per account in the formats `aws_<account_name>` and `aws_<account_number>`. 
 
-For steampipe, A single aggregate connector `aws_all` will be created with one of each AWS account, using the `aws_<accountnumber>` connectors.
+For steampipe, A single aggregate connector `aws` will be created with one of each AWS account, using the `aws_<account_number>` connectors.
 
 If you already have an AWS CLI SSO token that matches the SSO URL and region, it will be used. Otherwise, a new device flow authentication will be started using the SSO parameters, and the token will be cached to disk for further AWS CLI operations.
 
@@ -104,17 +104,17 @@ If you need to specify an authentication method, such as to use CLI or ENV crede
 
 `aiphelper` will create one Steampipe connector for each AWS profile for each region specified, defaulting to the AWS CLI default region search order. The connector names will be in the format `aws_<account_name>_<role_name>` where both account and role names are normalized to be lowercase with underscores, and truncated to 63 characters.
 
-When using Kion as an account source, aggregate connectors will be created for each unique role. The connector names will be in the format `aws_all_<role_name>` where the role name is normalized to be lowercase with underscores, and truncated to 63 characters. The aggregate connectors will allow you to query multiple accounts at once, limited to the accounts that role has access to.
+When using Kion as an account source, aggregate connectors will be created for each unique role. The connector names will be in the format `aws_role_<role_name>` where the role name is normalized to be lowercase with underscores, and truncated to 63 characters. The aggregate connectors will allow you to query multiple accounts at once, limited to the accounts that role has access to.
 
-For example, if you have access to the accounts `Div Dept My Account 001` and `Div Dept My Account 002` with a `ReadOnlyAccess` role, an aggregate connector will be created as `aws_all_readonlyaccess` which will use both the `aws_div_dept_my_account_001_readonlyaccess` and `aws_div_dept_my_account_002_readonlyaccess` connectors.
+For example, if you have access to the accounts `Div Dept My Account 001` and `Div Dept My Account 002` with a `ReadOnlyAccess` role, an aggregate connector will be created as `aws_role_readonlyaccess` which will use both the `aws_div_dept_my_account_001_readonlyaccess` and `aws_div_dept_my_account_002_readonlyaccess` connectors.
 
-If you are using AWS Identity Center as the account source, only one aggregate connector will be created, `aws_all`, which will use all the AWS accounts you have access to. 
+If you are using AWS Identity Center as the account source, only one aggregate connector will be created, `aws`, which will use all the AWS accounts you have access to. 
 
 The Steampipe configuration file will be created in the Steampipe config directory, which is typically located at `~/.steampipe/config/aws.spc`. If you have custom connectors or settings, they will be preserved. `aiphelper` will only manage the file contents between its file markers, `### AIPHELPER_MARKER_[START|END] ###`
 
 ### Azure
 
-`aiphelper` will create a steampipe connector for each Azure subscription it discovers. It will also create an aggregate connector `azure_all` with every Azure subscription.
+`aiphelper` will create a steampipe connector for each Azure subscription it discovers. It will also create an aggregate connector `azure` with every Azure subscription.
 
 ### Performance
 
