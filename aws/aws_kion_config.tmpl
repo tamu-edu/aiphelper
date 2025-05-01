@@ -1,0 +1,10 @@
+### {{$.Marker}}_START ###
+
+{{range .AccountList}}
+[profile {{.NormalizedAccountName}}]
+credential_process = kion stak --credential-process --account {{.AccountInfo.AccountId}} --car '{{.KionCloudAccessRoleName}}'
+region = {{$.Params.DefaultRegion}}
+output = {{$.Params.DefaultFormat}}
+{{end}}
+
+### {{$.Marker}}_END ###

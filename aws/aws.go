@@ -13,6 +13,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"text/template"
 	"time"
@@ -33,6 +34,9 @@ import (
 //go:embed aws_config.tmpl
 var awsTemplateString string
 
+//go:embed aws_kion_config.tmpl
+var awsKionTemplateString string
+
 //go:embed steampipe.gospc
 var steampipeTemplateString string
 
@@ -44,7 +48,8 @@ type SSOCachedCredential struct {
 }
 
 type AWSAccountInfo struct {
-	NormalizedAccountName string
+	NormalizedAccountName   string
+	KionCloudAccessRoleName string
 	ssotypes.AccountInfo
 }
 
@@ -63,47 +68,74 @@ type AWSTemplateData struct {
 	Marker      string
 }
 
+type SteampipeRole struct {
+	RoleName              string
+	RoleProfileListString string
+}
+
 type SteampipeTemplateData struct {
 	Regions           []string
 	AccountList       []AWSAccountInfo
 	AllAccountsString string
 	RegionsString     string
+	RoleList          []SteampipeRole
 	Marker            string
 }
 
 func Init() {
-
 	awsTemplate = template.Must(template.New("awsTemplate").Parse(awsTemplateString))
+	awsKionTemplate := template.Must(template.New("awsTemplate").Parse(awsKionTemplateString))
 	steampipeTemplate = template.Must(template.New("steampipeTemplate").Parse(steampipeTemplateString))
 
 	awsTemplateData.Params = options
 
-	accessToken, cfg, err := authenticate()
-	if err != nil {
-		log.Fatalln(err)
-	}
+	var err error
 
-	// create sso client
-	ssoClient := sso.NewFromConfig(cfg)
-	// list accounts
-	fmt.Print("Fetching list of all accounts... ")
+	if options.FromKion {
+		// Switch to the Kion template when --from-kion is used
+		awsTemplate = awsKionTemplate
 
-	accountPaginator := sso.NewListAccountsPaginator(ssoClient, &sso.ListAccountsInput{
-		AccessToken: &accessToken,
-	})
+		// Get Kion URL and API key from global options
+		kionURL := globalOpts.GetKionURL()
+		kionApikey := globalOpts.GetKionApikey()
 
-	for accountPaginator.HasMorePages() {
-		x, err := accountPaginator.NextPage(context.TODO())
+		// Get accounts from Kion
+		fmt.Println("Using Kion as the account source...")
+		accounts, err = GetAccountsFromKion(kionURL, kionApikey)
 		if err != nil {
-			fmt.Println(err)
+			log.Fatalf("Failed to get accounts from Kion: %v", err)
 		}
-		for _, account := range x.AccountList {
-			account := AWSAccountInfo{AccountInfo: account}
-			if len(options.Accounts.All) > 0 && !slices.Contains(options.Accounts.All, *account.AccountId) {
-				continue
+
+	} else {
+		// Use existing SSO logic
+		accessToken, cfg, err := authenticate()
+		if err != nil {
+			log.Fatalln(err)
+		}
+
+		// create sso client
+		ssoClient := sso.NewFromConfig(cfg)
+		// list accounts
+		fmt.Print("Fetching list of all accounts from AWS Identity Center... ")
+
+		accountPaginator := sso.NewListAccountsPaginator(ssoClient, &sso.ListAccountsInput{
+			AccessToken: &accessToken,
+		})
+
+		for accountPaginator.HasMorePages() {
+			x, err := accountPaginator.NextPage(context.TODO())
+			if err != nil {
+				fmt.Println(err)
 			}
-			account.NormalizedAccountName = utils.SnakeCase(*account.AccountName)
-			accounts = append(accounts, account)
+			for _, account := range x.AccountList {
+				account := AWSAccountInfo{AccountInfo: account}
+				if len(options.Accounts.All) > 0 && !slices.Contains(options.Accounts.All, *account.AccountId) {
+					continue
+				}
+				fmt.Printf("Account: %s (%s)\n", *account.AccountName, *account.AccountId)
+				account.NormalizedAccountName = utils.SnakeCase(*account.AccountName)
+				accounts = append(accounts, account)
+			}
 		}
 	}
 
@@ -226,11 +258,13 @@ func updateAwsConfigFile() {
 	var awsTemplateBuffer bytes.Buffer
 
 	awsTemplateData.AccountList = accounts
+	utils.Debug("List of AWS accounts: %v\n", awsTemplateData.AccountList)
 	err = awsTemplate.Execute(&awsTemplateBuffer, awsTemplateData)
 	if err != nil {
 		log.Fatalln(err)
 	}
 
+	utils.Debug("Writing AWS config file contents: %s\n", awsTemplateBuffer.String())
 	err = utils.CreateOrReplaceInFile(awsConfigFilePath, awsTemplateBuffer.String())
 
 	if err != nil {
@@ -246,8 +280,55 @@ func updateSteampipeAwsConfigFile() {
 
 	steampipeTemplateData.RegionsString = strings.Join(options.Regions.All, "\", \"")
 
+	// Create a map to group accounts by role
+	roleToAccounts := make(map[string][]string)
+
+	// Find all unique KionCloudAccessRoleName values and build lists of accounts for each role
 	for _, account := range accounts {
-		steampipeTemplateData.AllAccountsString = steampipeTemplateData.AllAccountsString + "\"aws_" + *account.AccountId + "\", "
+		roleName := account.KionCloudAccessRoleName
+		normalizedRoleName := strings.ToLower(roleName)
+		re := regexp.MustCompile(`[^a-z0-9_]`)
+		normalizedRoleName = re.ReplaceAllString(normalizedRoleName, "_")
+
+		if roleName != "" { // Only process accounts with role names (from Kion)
+			// Initialize the slice if this is the first account with this role
+			if _, exists := roleToAccounts[normalizedRoleName]; !exists {
+				roleToAccounts[normalizedRoleName] = []string{}
+			}
+
+			// Add this account's normalized name to the appropriate role's list
+			roleToAccounts[normalizedRoleName] = append(roleToAccounts[normalizedRoleName], account.NormalizedAccountName)
+		}
+	}
+
+	// Create role objects for the template
+	steampipeTemplateData.RoleList = []SteampipeRole{}
+	for roleName, accountNames := range roleToAccounts {
+		// Create a string of profile names for this role
+		profileListStr := ""
+		for _, acctName := range accountNames {
+			profileListStr += "\"" + acctName + "\", "
+		}
+		profileListStr = strings.Trim(profileListStr, ", ")
+
+		// Add this role to the template data
+		steampipeTemplateData.RoleList = append(steampipeTemplateData.RoleList, SteampipeRole{
+			RoleName:              roleName,
+			RoleProfileListString: profileListStr,
+		})
+	}
+
+	// Debug logging
+	fmt.Println("Found the following Kion roles and accounts:")
+	for roleName, accounts := range roleToAccounts {
+		fmt.Printf("  Role: %s\n", roleName)
+		for _, acct := range accounts {
+			fmt.Printf("    - %s\n", acct)
+		}
+	}
+
+	for _, account := range accounts {
+		steampipeTemplateData.AllAccountsString = steampipeTemplateData.AllAccountsString + "\"aws_" + account.NormalizedAccountName + "\", "
 	}
 
 	steampipeTemplateData.AllAccountsString = strings.Trim(steampipeTemplateData.AllAccountsString, ", ")
