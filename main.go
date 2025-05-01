@@ -18,12 +18,13 @@ import (
 var Version = "development"
 
 var opts struct {
-	Version bool `long:"version" short:"V" description:"aiphelper Version"`
+	Version    bool   `long:"version" short:"V" description:"aiphelper Version"`
 	Debug      bool   `long:"debug" short:"d" description:"Enable debug logging"`
+	KionUrl    string `long:"kion-url" description:"Kion URL to use for profile generation" env:"KION_URL"`
+	KionApikey string `long:"kion-apikey" description:"Kion API token for authentication" env:"KION_APIKEY"`
 }
 
 func main() {
-
 	p := flags.NewParser(&opts, flags.HelpFlag|flags.PassDoubleDash)
 
 	aws.AddCommand(p)
@@ -31,9 +32,14 @@ func main() {
 
 	_, err := p.Parse()
 
-	if opts.Version == true {
 	// Set the debug flag in the utils package
 	utils.DebugEnabled = opts.Debug
+
+	// Store global options
+	utils.SetGlobalOption("kion-url", opts.KionUrl)
+	utils.SetGlobalOption("kion-apikey", opts.KionApikey)
+
+	if opts.Version {
 		fmt.Printf("Version: %s\n", Version)
 		os.Exit(0)
 	}
