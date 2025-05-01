@@ -29,11 +29,43 @@ type Options struct {
 	Accounts      *Accounts `long:"accounts" default:"" description:"Comma-separated list of accounts to tell Steampipe to connect to (default: all accounts assigned to you through SSO)"`
 	DefaultFormat string    `long:"output-format" default:"json" description:"Output format for AWS CLI"`
 	DefaultRegion string    `long:"default-region" default:"us-east-1" description:"Default region for AWS CLI operations"`
+	FromKion      bool      `long:"from-kion" description:"Use Kion API to get AWS account list (default)" group:"account-source"`
+	FromSSO       bool      `long:"from-sso" description:"Use AWS Identity Center to get account list" group:"account-source"`
 }
 
 func AddCommand(p *flags.Parser) {
 	options = &Options{}
-	p.AddCommand("aws", "Initialize AWS", "Initialize AWS", options)
+	options.FromKion = true // Default to Kion
+
+	_, err := p.AddCommand("aws", "Initialize AWS", "Initialize AWS config and Steampipe connections", options)
+	if err != nil {
+		log.Fatalf("Failed to add AWS command: %v", err)
+	}
+}
+
+// Validate checks that the options are valid
+func (o *Options) Execute(args []string) error {
+	// Ensure exactly one account source is selected
+	if o.FromKion == o.FromSSO {
+		return errors.New("you must specify exactly one account source: either --from-kion or --from-sso")
+	}
+
+	// If using Kion, ensure URL and API key are provided
+
+	if o.FromKion {
+		// Get Kion URL and API key from global options
+		kionURL := utils.GetGlobalOption("kion-url")
+		kionApikey := utils.GetGlobalOption("kion-apikey")
+
+		if kionURL == "" {
+			return errors.New("--kion-url is required when using --from-kion")
+		}
+		if kionApikey == "" {
+			return errors.New("--kion-apikey is required when using --from-kion")
+		}
+	}
+
+	return nil
 }
 
 func (r *Regions) UnmarshalFlag(arg string) error {

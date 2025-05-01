@@ -1,28 +1,24 @@
 ### {{$.Marker}}_START ###
 
-connection "aws_all" {
+
+{{range .RoleList}}
+connection "aws_all_{{.RoleName}}" {
   plugin      = "aws"
   type        = "aggregator"
-  connections = [{{.AllAccountsString}}]
+  connections = [{{.RoleProfileListString}}]
   {{- if ne $.RegionsString "" }}
   regions   = ["{{$.RegionsString}}"]
   {{- end }}
 }
+{{end}}
 
 {{range .AccountList}}
-# Account Name: {{.AccountName}}
-# Account Email: {{.EmailAddress}}
-connection "aws_{{.AccountId}}" {
+connection "{{.NormalizedAccountName}}" {
   plugin    = "aws"
-  profile   = "{{.AccountId}}"
+  profile   = "{{.NormalizedAccountName}}"
   {{- if ne $.RegionsString "" }}
   regions   = ["{{$.RegionsString}}"]
   {{- end }}
-}
-connection "aws_{{.NormalizedAccountName}}" {
-  plugin    = "aws"
-  profile   = "{{.NormalizedAccountName}}"
-  regions   = ["{{$.RegionsString}}"]
 }
 {{end}}
 
